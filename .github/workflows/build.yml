@@ -1,12 +1,11 @@
-# Builds Mansion for Windows, Linux and Android on every push to main, and
-# publishes a release with the three packages when a tag v* is pushed.
+# Builds Mansion for Windows, Linux and Android on every push to main and
+# publishes (or updates) the release v<VERSION> with the three packages.
 # The packages hold the program, SDL2 and the snes9x libretro core: no game.
 name: build
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 env:
@@ -92,8 +91,7 @@ jobs:
       - name: Build
         run: |
           ndk=$(sed -n 's/^Pkg.Revision *= *//p' $ANDROID_NDK_HOME/source.properties)
-          v=${{ github.ref_name }}
-          case $v in v[0-9]*) v=${v#v} ;; *) v=0.0 ;; esac
+          v=$(cat VERSION)
           cd android
           gradle --no-daemon assembleRelease -PndkVersion=$ndk -PversionCode=${{ github.run_number }} -PversionName=$v
           cp app/build/outputs/apk/release/app-release.apk ../Mansion-Android.apk
@@ -101,17 +99,21 @@ jobs:
         with: { name: Mansion-Android, path: Mansion-Android.apk }
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main'
     needs: [windows, linux, android]
     runs-on: ubuntu-24.04
     permissions: { contents: write }
     steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: echo "tag=v$(cat VERSION)" >> $GITHUB_OUTPUT
       - uses: actions/download-artifact@v4
         with: { merge-multiple: true }
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Mansion ${{ github.ref_name }}
+          tag_name: ${{ steps.v.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Mansion ${{ steps.v.outputs.tag }}
           body: |
             Windows: descomprimí Mansion-Windows.zip, poné tu ROM "Addams Family, The (USA).sfc" al lado de Mansion.exe y abrilo.
             Linux: descomprimí Mansion-Linux.tar.gz, poné la ROM al lado y corré ./mansion.

@@ -77,7 +77,7 @@ sh tools/android-prepare.sh ruta/a/SDL2-2.30.9 ruta/a/snes9x/libretro/libs
 cd android && gradle assembleRelease
 ```
 
-GitHub Actions (`.github/workflows/build.yml`) compila las tres versiones en cada push, y al subir un tag `v*` publica un release con los tres paquetes.
+GitHub Actions (`.github/workflows/build.yml`) compila las tres versiones en cada push a `main` y publica (o actualiza) el release `v` + el número del archivo `VERSION`.
 
 El núcleo snes9x se compila desde [libretro/snes9x](https://github.com/libretro/snes9x) (`make -C libretro`, o `platform=win` con MinGW).
 
