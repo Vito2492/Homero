@@ -12,7 +12,7 @@ SDL2_MINGW ?= SDL2-2.30.9/x86_64-w64-mingw32
 all: mansion
 
 mansion: src/mansion.c src/libretro.h
-	$(CC) $(CFLAGS) -o $@ src/mansion.c $$(sdl2-config --cflags --libs)
+	$(CC) $(CFLAGS) -o $@ src/mansion.c $$(sdl2-config --cflags --libs) -lm
 
 windows: Mansion.exe
 

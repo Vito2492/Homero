@@ -1,0 +1,41 @@
+// Mansion for Android: SDL2 and the program built by CMake into libSDL2.so and
+// libmain.so (jni/CMakeLists.txt); the snes9x core comes prebuilt in jniLibs.
+// tools/android-prepare.sh puts the SDL sources in place before building.
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'io.github.vito2492.mansion'
+    compileSdk 34
+    if (project.hasProperty('ndkVersion')) ndkVersion project.property('ndkVersion')
+    defaultConfig {
+        applicationId 'io.github.vito2492.mansion'
+        minSdk 24
+        targetSdk 34
+        versionCode Integer.parseInt((project.findProperty('versionCode') ?: '1').toString())
+        versionName((project.findProperty('versionName') ?: '1.0').toString())
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_static'
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug      // sideloaded APK
+        }
+    }
+    packagingOptions {
+        jniLibs { useLegacyPackaging true }        // the core is opened by name with dlopen
+    }
+    externalNativeBuild {
+        cmake {
+            path 'jni/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+    lint {
+        abortOnError false
+    }
+}

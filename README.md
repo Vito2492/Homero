@@ -1,6 +1,6 @@
 # Mansion
 
-Un programa para jugar **The Addams Family** de Super Nintendo (Ocean, 1992) en PC, con menús nuevos, trucos, mapa, boss rush, modo fácil y más. Linux y Android están en camino.
+Un programa para jugar **The Addams Family** de Super Nintendo (Ocean, 1992) en **Windows, Linux y Android**, con menús nuevos, trucos, mapa, boss rush, modo fácil y más.
 
 El juego no se modifica: Mansion corre **tu propia ROM** con un núcleo de emulación (libretro) y le agrega todo lo nuevo leyendo y escribiendo la memoria del juego. Los menús usan la fuente, el marco de piedra y la mano-cursor **del propio juego**, que el programa saca de tu ROM al arrancar. Por eso este repositorio no contiene nada del juego.
 
@@ -34,13 +34,19 @@ El juego no se modifica: Mansion corre **tu propia ROM** con un núcleo de emula
 - Avance rápido (Tab), pantalla completa (F11 o Alt+Enter).
 - **Controles remapeables** (Opciones → Controles), teclado y mando.
 
-## Cómo usarlo (Windows)
+## Descargar
 
-1. Descargá o compilá `Mansion.exe` y poné junto a él `SDL2.dll` y `snes9x_libretro.dll` (o cualquier núcleo libretro de SNES con ese nombre).
-2. Poné tu ROM al lado: **`Addams Family, The (USA).sfc`** (también podés arrastrarla sobre el programa). Tiene que ser la versión USA sin modificar (CRC32 `2E8034AB`).
-3. Abrí `Mansion.exe`. La primera vez tarda un par de segundos mientras saca el arte de los menús de tu ROM.
+En [Releases](../../releases) están las tres versiones. Ninguna incluye el juego: usá tu propia ROM, la versión USA sin modificar (CRC32 `2E8034AB`).
 
-No se incluye ni se enlaza ninguna ROM. Usá la tuya.
+- **Windows**: descomprimí `Mansion-Windows.zip`, poné tu ROM **`Addams Family, The (USA).sfc`** al lado de `Mansion.exe` (o arrastrala sobre el programa) y abrilo.
+- **Linux**: descomprimí `Mansion-Linux.tar.gz`, poné la ROM al lado y corré `./mansion`.
+- **Android**: instalá `Mansion-Android.apk` (hay que permitir instalar apps de origen desconocido). La primera vez te pide elegir tu ROM (`.sfc`, `.smc` o un `.zip` que la tenga) y la copia dentro de la app.
+
+La primera vez tarda un par de segundos mientras saca el arte de los menús de tu ROM.
+
+### En el celular
+
+Controles táctiles con la forma del mando de Super Nintendo: cruceta a la izquierda, Select y Start debajo, Y X A B en rombo a la derecha con L y R arriba, y un botón de pausa arriba a la izquierda. En los menús la cruceta mueve, A acepta y B vuelve. El botón "atrás" del teléfono también pausa. Si conectás un mando, los controles de la pantalla se esconden hasta que tocás la pantalla.
 
 ### Controles por defecto
 
@@ -65,7 +71,13 @@ make
 
 # Windows desde Linux (MinGW-w64 + el paquete "SDL2-devel-…-mingw")
 make windows SDL2_MINGW=ruta/a/SDL2-2.30.9/x86_64-w64-mingw32
+
+# Android (NDK + Gradle 8.9): núcleo con ndk-build, después
+sh tools/android-prepare.sh ruta/a/SDL2-2.30.9 ruta/a/snes9x/libretro/libs
+cd android && gradle assembleRelease
 ```
+
+GitHub Actions (`.github/workflows/build.yml`) compila las tres versiones en cada push, y al subir un tag `v*` publica un release con los tres paquetes.
 
 El núcleo snes9x se compila desde [libretro/snes9x](https://github.com/libretro/snes9x) (`make -C libretro`, o `platform=win` con MinGW).
 
@@ -99,7 +111,7 @@ Zonas: 00 Hall of Stairs, 01 Addams Residence, 02 The Old Tree, 03 The Conservat
 
 ## Estado
 
-Probado con pruebas automáticas y jugando. Falta comprobar con jefes reales la detección del boss rush y el desbloqueo al terminar el juego, y confirmar qué familiar es cada marca de progreso. Pendiente: versión Android con controles táctiles, versión Linux empaquetada, pantalla ancha.
+Probado con pruebas automáticas y jugando. Falta comprobar con jefes reales la detección del boss rush y el desbloqueo al terminar el juego, y confirmar qué familiar es cada marca de progreso. Pendiente: pantalla ancha. El APK de Android va firmado con una clave de prueba (para instalar a mano, no para Play Store).
 
 ## Créditos
 
@@ -113,4 +125,4 @@ The Addams Family es una marca de sus respectivos dueños. Este proyecto no est�
 
 ## English
 
-**Mansion** runs your own SNES **The Addams Family (USA)** ROM through a libretro core and adds: its own start menu, pause menu at any time (F1/Esc), Spanish/English, cheats (easy mode where a hit costs a quarter heart, god mode, infinite health/lives, flying hat, sword, golf balls, no slowdown), level select that keeps your progress, passwords typed in for you, an automap, progress screen, on-screen timer, a boss rush unlocked by finishing the game with its own rules, save states and remappable controls. The menus use the game's own font, frame and cursor, taken from your ROM at start-up, so this repository contains nothing from the game. Put `Addams Family, The (USA).sfc` (CRC32 `2E8034AB`) next to `Mansion.exe`, `SDL2.dll` and `snes9x_libretro.dll`. Build with `make` (Linux) or `make windows` (MinGW). MIT license.
+**Mansion** (Windows, Linux, Android with touch controls) runs your own SNES **The Addams Family (USA)** ROM through a libretro core and adds: its own start menu, pause menu at any time (F1/Esc), Spanish/English, cheats (easy mode where a hit costs a quarter heart, god mode, infinite health/lives, flying hat, sword, golf balls, no slowdown), level select that keeps your progress, passwords typed in for you, an automap, progress screen, on-screen timer, a boss rush unlocked by finishing the game with its own rules, save states and remappable controls. The menus use the game's own font, frame and cursor, taken from your ROM at start-up, so this repository contains nothing from the game. Put `Addams Family, The (USA).sfc` (CRC32 `2E8034AB`) next to `Mansion.exe`, `SDL2.dll` and `snes9x_libretro.dll`. Build with `make` (Linux) or `make windows` (MinGW). MIT license.

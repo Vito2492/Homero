@@ -9,9 +9,16 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <math.h>
 #include "libretro.h"
+#ifdef __ANDROID__
+#include <SDL_system.h>
+#include <jni.h>
+#endif
 
-#ifdef _WIN32
+#if defined(__ANDROID__)
+#define CORE_NAME "libsnes9x_libretro.so"
+#elif defined(_WIN32)
 #define CORE_NAME "snes9x_libretro.dll"
 #else
 #define CORE_NAME "snes9x_libretro.so"
@@ -755,7 +762,12 @@ static void load_state(void)
     if (ok) { lives_hold = 0; started = true; boss_prev = 0xff; }
 }
 
-static void set_fullscreen(void) { if (win) SDL_SetWindowFullscreen(win, cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0); }
+static void set_fullscreen(void)
+{
+#ifndef __ANDROID__
+    if (win) SDL_SetWindowFullscreen(win, cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+#endif
+}
 
 static void open_page(int p) { if (p != P_CHEATS && p != P_CONTROLS) from_page = page; page = p; sel = 0; }
 static void resume(void) { state = ST_PLAY; if (audio) SDL_ClearQueuedAudio(audio); }
@@ -1229,6 +1241,245 @@ static void bind_pad(int b)
     binding = -1; *toast = 0; cfg_save();
 }
 /* ------------------------------------------------------------------ */
+/* Touch screens: a Super Nintendo pad on the screen (from ComboBreaker) */
+/* ------------------------------------------------------------------ */
+
+// A d-pad on the left with Select and Start under it, Y X A B in a diamond
+// on the right with L and R above, and a pause button in the top left
+// corner. Drawn by the SDL renderer over the picture, in window pixels.
+enum { C_DPAD, C_L, C_Y, C_X, C_R, C_B, C_A, C_SELECT, C_START, C_PAUSE, NCTL };
+typedef struct { float x, y, r; } circle_t;
+static circle_t dpad, ctl[NCTL];
+static int lay_w, lay_h;
+#define MAX_FINGERS 10
+typedef struct { SDL_FingerID id; int ctl; uint16_t dir; bool used; } finger_t;
+static finger_t fingers[MAX_FINGERS];
+static bool touched, pause_tap;
+static uint16_t touch_prev;
+
+static void touch_layout(int w, int h)
+{
+    if (w == lay_w && h == lay_h) return;
+    lay_w = w; lay_h = h;
+    float u = (w < h ? w : h) / 10.0f;          // a tenth of the short side
+    float cy = h * 0.60f;
+    dpad = (circle_t){ 2.3f * u, cy, 1.7f * u };
+    float rx = w - 2.4f * u, s = 1.15f * u, br = 0.62f * u;
+    ctl[C_Y] = (circle_t){ rx - s, cy, br };
+    ctl[C_X] = (circle_t){ rx, cy - s, br };
+    ctl[C_A] = (circle_t){ rx + s, cy, br };
+    ctl[C_B] = (circle_t){ rx, cy + s, br };
+    ctl[C_L] = (circle_t){ rx - 1.1f * u, cy - 2.55f * u, 0.55f * u };
+    ctl[C_R] = (circle_t){ rx + 1.1f * u, cy - 2.55f * u, 0.55f * u };
+    ctl[C_SELECT] = (circle_t){ 1.5f * u, h - 0.75f * u, 0.45f * u };
+    ctl[C_START] = (circle_t){ 3.1f * u, h - 0.75f * u, 0.45f * u };
+    ctl[C_PAUSE] = (circle_t){ 0.75f * u, 0.75f * u, 0.45f * u };
+}
+
+static uint16_t dpad_dir(float x, float y)
+{
+    float dx = x - dpad.x, dy = y - dpad.y;
+    if (dx * dx + dy * dy < (dpad.r * 0.2f) * (dpad.r * 0.2f)) return 0;
+    float a = atan2f(-dy, dx) * 180.0f / 3.14159265f;  // 0 = right, 90 = up
+    if (a < 0) a += 360;
+    uint16_t d = 0;                                     // eight sectors of 45 degrees
+    if (a < 67.5f || a >= 292.5f) d |= 1 << RETRO_DEVICE_ID_JOYPAD_RIGHT;
+    if (a >= 22.5f && a < 157.5f) d |= 1 << RETRO_DEVICE_ID_JOYPAD_UP;
+    if (a >= 112.5f && a < 247.5f) d |= 1 << RETRO_DEVICE_ID_JOYPAD_LEFT;
+    if (a >= 202.5f && a < 337.5f) d |= 1 << RETRO_DEVICE_ID_JOYPAD_DOWN;
+    return d;
+}
+
+static bool inside(const circle_t *c, float x, float y, float slack)
+{
+    float dx = x - c->x, dy = y - c->y, r = c->r * slack;
+    return dx * dx + dy * dy <= r * r;
+}
+
+static int touch_hit(float x, float y)
+{
+    if (inside(&dpad, x, y, 1.25f)) return C_DPAD;
+    int best = -1;
+    float bd = 1e30f;
+    for (int i = C_L; i < NCTL; i++) {
+        float dx = x - ctl[i].x, dy = y - ctl[i].y, d = dx * dx + dy * dy;
+        if (inside(&ctl[i], x, y, 1.35f) && d < bd) { bd = d; best = i; }
+    }
+    return best;
+}
+
+static bool touch_event(const SDL_Event *ev, int w, int h)
+{
+    if (ev->type != SDL_FINGERDOWN && ev->type != SDL_FINGERMOTION && ev->type != SDL_FINGERUP) return false;
+    touched = true;
+    touch_layout(w, h);
+    float x = ev->tfinger.x * w, y = ev->tfinger.y * h;
+    int s = -1;
+    for (int i = 0; i < MAX_FINGERS; i++) if (fingers[i].used && fingers[i].id == ev->tfinger.fingerId) s = i;
+    if (s < 0 && ev->type == SDL_FINGERDOWN)
+        for (int i = 0; i < MAX_FINGERS && s < 0; i++)
+            if (!fingers[i].used) { s = i; fingers[i] = (finger_t){ ev->tfinger.fingerId, -1, 0, true }; }
+    if (s < 0) return true;
+    if (ev->type == SDL_FINGERUP) { fingers[s].used = false; return true; }
+    int c = touch_hit(x, y);
+    if (fingers[s].ctl == C_DPAD && ev->type == SDL_FINGERMOTION) c = C_DPAD;   // the d-pad keeps its finger
+    fingers[s].ctl = c;
+    fingers[s].dir = c == C_DPAD ? dpad_dir(x, y) : 0;
+    if (ev->type == SDL_FINGERDOWN && c == C_PAUSE) pause_tap = true;
+    return true;
+}
+
+// Shown on phones and tablets while no pad is connected, or once the screen is touched.
+static bool touch_shown(bool pad)
+{
+#ifdef __ANDROID__
+    return touched || !pad;
+#else
+    return touched && SDL_GetNumTouchDevices() > 0;
+#endif
+}
+
+static uint16_t touch_held(void)
+{
+    static const int btn[NCTL] = { -1, RETRO_DEVICE_ID_JOYPAD_L, RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X,
+        RETRO_DEVICE_ID_JOYPAD_R, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A, RETRO_DEVICE_ID_JOYPAD_SELECT,
+        RETRO_DEVICE_ID_JOYPAD_START, -1 };
+    uint16_t h = 0;
+    for (int i = 0; i < MAX_FINGERS; i++) {
+        if (!fingers[i].used || fingers[i].ctl < 0) continue;
+        if (fingers[i].ctl == C_DPAD) h |= fingers[i].dir;
+        else if (btn[fingers[i].ctl] >= 0) h |= (uint16_t)(1 << btn[fingers[i].ctl]);
+    }
+    return h;
+}
+
+static void disc(SDL_Renderer *ren, float cx, float cy, float r, SDL_Color c)
+{
+    enum { N = 40 };
+    SDL_Vertex v[N + 1];
+    int idx[N * 3];
+    v[0] = (SDL_Vertex){ { cx, cy }, c, { 0, 0 } };
+    for (int i = 0; i < N; i++) {
+        float a = i * 6.2831853f / N;
+        v[i + 1] = (SDL_Vertex){ { cx + r * cosf(a), cy + r * sinf(a) }, c, { 0, 0 } };
+        idx[i * 3] = 0; idx[i * 3 + 1] = i + 1; idx[i * 3 + 2] = (i + 1) % N + 1;
+    }
+    SDL_RenderGeometry(ren, NULL, v, N + 1, idx, N * 3);
+}
+
+// The button letters, in the game's own font (from the ROM).
+static void touch_letters(SDL_Renderer *ren, const char *s, float cx, float cy, float size)
+{
+    float px = size / 8;
+    int n = (int)strlen(s);
+    SDL_SetRenderDrawColor(ren, 255, 255, 255, 200);
+    for (int k = 0; k < n; k++) {
+        int c = (unsigned char)s[k];
+        if (c < 0x20 || c >= 0x60) continue;
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++)
+                if (font[c - 0x20][y][x] >= 2) {
+                    SDL_FRect r = { cx - n * 4 * px + (k * 8 + x) * px, cy - 4 * px + y * px, px + 0.5f, px + 0.5f };
+                    SDL_RenderFillRectF(ren, &r);
+                }
+    }
+}
+
+static bool ctl_held(int c)
+{
+    for (int i = 0; i < MAX_FINGERS; i++) if (fingers[i].used && fingers[i].ctl == c) return true;
+    return false;
+}
+
+static void touch_draw(SDL_Renderer *ren, int w, int h)
+{
+    touch_layout(w, h);
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    uint16_t held = touch_held();
+    disc(ren, dpad.x, dpad.y, dpad.r, (SDL_Color){ 255, 255, 255, 28 });
+    float arm = dpad.r * 0.34f, len = dpad.r * 0.92f;
+    const struct { int bit; float dx, dy; } arms[] = {
+        { RETRO_DEVICE_ID_JOYPAD_UP, 0, -1 }, { RETRO_DEVICE_ID_JOYPAD_DOWN, 0, 1 },
+        { RETRO_DEVICE_ID_JOYPAD_LEFT, -1, 0 }, { RETRO_DEVICE_ID_JOYPAD_RIGHT, 1, 0 },
+    };
+    for (int i = 0; i < 4; i++) {
+        bool on = held >> arms[i].bit & 1;
+        SDL_SetRenderDrawColor(ren, 210, 210, 210, on ? 170 : 80);
+        SDL_FRect r = arms[i].dx ? (SDL_FRect){ dpad.x + (arms[i].dx < 0 ? -len : arm * 0.5f), dpad.y - arm * 0.5f, len - arm * 0.5f, arm }
+                                 : (SDL_FRect){ dpad.x - arm * 0.5f, dpad.y + (arms[i].dy < 0 ? -len : arm * 0.5f), arm, len - arm * 0.5f };
+        SDL_RenderFillRectF(ren, &r);
+    }
+    SDL_SetRenderDrawColor(ren, 210, 210, 210, 80);
+    SDL_FRect mid = { dpad.x - arm * 0.5f, dpad.y - arm * 0.5f, arm, arm };
+    SDL_RenderFillRectF(ren, &mid);
+    static const struct { int c; const char *t; SDL_Color col; } btns[] = {
+        { C_X, "X", { 60, 90, 220, 0 } }, { C_A, "A", { 220, 50, 50, 0 } },
+        { C_B, "B", { 230, 190, 40, 0 } }, { C_Y, "Y", { 40, 165, 80, 0 } },
+        { C_L, "L", { 150, 150, 160, 0 } }, { C_R, "R", { 150, 150, 160, 0 } },
+        { C_SELECT, "SE", { 120, 120, 130, 0 } }, { C_START, "ST", { 120, 120, 130, 0 } },
+    };
+    for (size_t i = 0; i < sizeof btns / sizeof btns[0]; i++) {
+        const circle_t *c = &ctl[btns[i].c];
+        SDL_Color col = btns[i].col;
+        col.a = ctl_held(btns[i].c) ? 200 : 90;
+        disc(ren, c->x, c->y, c->r, col);
+        touch_letters(ren, btns[i].t, c->x, c->y, c->r * (btns[i].t[1] ? 0.55f : 0.8f));
+    }
+    const circle_t *m = &ctl[C_PAUSE];                  // pause: two bars
+    disc(ren, m->x, m->y, m->r, (SDL_Color){ 120, 120, 130, ctl_held(C_PAUSE) ? 200 : 90 });
+    SDL_SetRenderDrawColor(ren, 255, 255, 255, 190);
+    for (int i = -1; i <= 1; i += 2) {
+        SDL_FRect r = { m->x + i * m->r * 0.22f - m->r * 0.1f, m->y - m->r * 0.45f, m->r * 0.2f, m->r * 0.9f };
+        SDL_RenderFillRectF(ren, &r);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Android: the player picks their ROM once, it's copied into the app    */
+/* ------------------------------------------------------------------ */
+
+#ifdef __ANDROID__
+static int activity_call(const char *name, const char *sig, const char *arg)
+{
+    JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+    jobject act = (jobject)SDL_AndroidGetActivity();
+    if (!env || !act) return -1;
+    jclass cls = (*env)->GetObjectClass(env, act);
+    jmethodID m = (*env)->GetMethodID(env, cls, name, sig);
+    int r = -1;
+    if (m) {
+        if (arg) {
+            jstring js = (*env)->NewStringUTF(env, arg);
+            (*env)->CallVoidMethod(env, act, m, js);
+            (*env)->DeleteLocalRef(env, js);
+            r = 0;
+        } else r = (*env)->CallIntMethod(env, act, m);
+    }
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); r = -1; }
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, act);
+    return r;
+}
+
+static bool android_pick_rom(void)
+{
+    const char *msg = cfg.lang == 1
+        ? "This app plays your own copy of The Addams Family for Super Nintendo (USA). No game comes with it.\n\n"
+          "Choose your ROM file (.sfc, .smc or a .zip with it). It is copied into the app once."
+        : "Esta app juega tu propia copia de The Addams Family de Super Nintendo (USA). No trae el juego.\n\n"
+          "Elige tu archivo de la ROM (.sfc, .smc o un .zip que la tenga). Se copia a la app una sola vez.";
+    if (activity_call("askRom", "(Ljava/lang/String;)V", msg) < 0) return false;
+    int st;                                  // 0 asking or copying, 1 copied, 2 cancelled, 3 failed, 4 quit
+    while ((st = activity_call("pickState", "()I", NULL)) == 0) {
+        SDL_Event ev;
+        while (SDL_PollEvent(&ev)) if (ev.type == SDL_QUIT) return false;
+        SDL_Delay(50);
+    }
+    return st == 1;
+}
+#endif
+
+/* ------------------------------------------------------------------ */
 /* Main                                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -1283,9 +1534,15 @@ int main(int argc, char **argv)
         else rom_arg = argv[i];
     }
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) fatal(SDL_GetError());
+#ifdef __ANDROID__
+    const char *ip = SDL_AndroidGetInternalStoragePath();   // the app's own folder
+    snprintf(base, sizeof base, "%s/", ip ? ip : ".");
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+#else
     char *bp = SDL_GetBasePath();
     snprintf(base, sizeof base, "%s", bp ? bp : "./");
     SDL_free(bp);
+#endif
     cfg_load();
     guess_language();
     overclock = cfg.fastcpu;
@@ -1294,6 +1551,9 @@ int main(int argc, char **argv)
 
     char path[1100];
     snprintf(path, sizeof path, "%s%s", base, CORE_NAME);
+#ifdef __ANDROID__
+    snprintf(path, sizeof path, "%s", CORE_NAME);     // in the app's native library folder
+#endif
     if (!load_core(core_arg ? core_arg : path))
         fatal(T("Falta " CORE_NAME " junto al programa.", CORE_NAME " is missing next to the program."));
 
@@ -1302,6 +1562,16 @@ int main(int argc, char **argv)
     void *rom = NULL;
     if (rom_arg) rom = read_file(rom_arg, &rom_n);
     for (int i = 0; !rom && i < 3; i++) { snprintf(path, sizeof path, "%s%s", base, names[i]); rom = read_file(path, &rom_n); }
+#ifdef __ANDROID__
+    for (int tries = 0; tries < 3 && !(rom && rom_n == 0x100000 && crc32(rom, rom_n) == ROM_CRC); tries++) {
+        free(rom); rom = NULL;
+        snprintf(path, sizeof path, "%saddams.sfc", base);
+        remove(path);                          // a wrong file: ask again
+        if (!android_pick_rom()) break;
+        rom = read_file(path, &rom_n);
+    }
+    if (!rom) { SDL_Quit(); return 0; }
+#endif
     if (!rom) fatal(T("No encuentro la ROM. Pon \"Addams Family, The (USA).sfc\" junto al programa o arrastrala sobre el.",
                       "ROM not found. Put \"Addams Family, The (USA).sfc\" next to the program or drop it on it."));
     bool rom_ok = rom_n == 0x100000 && crc32(rom, rom_n) == ROM_CRC;
@@ -1405,6 +1675,18 @@ int main(int argc, char **argv)
         for (int i = 0; i < 200; i++) { m[RAM_BOSS] = 0; core.run(); m[RAM_BOSS] = 0; cheats(); play_hooks(); }
         printf("after boss beaten: rush %d done %d time %s\n", rush, rush_done, fmt_time(rush_frames));
         SHOT("13_rush_result");
+        {   // the touch controls as a phone (20:9) would show them
+            SDL_Surface *sf = SDL_CreateRGBSurfaceWithFormat(0, 1600, 720, 32, SDL_PIXELFORMAT_ARGB8888);
+            SDL_Renderer *r = SDL_CreateSoftwareRenderer(sf);
+            SDL_Texture *t = SDL_CreateTexture(r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, gw, gh);
+            SDL_UpdateTexture(t, NULL, game, gw * 4);
+            SDL_SetRenderDrawColor(r, 0, 0, 0, 255); SDL_RenderClear(r);
+            SDL_Rect dst = { (1600 - 960) / 2, 0, 960, 720 };
+            SDL_RenderCopy(r, t, NULL, &dst);
+            touched = true; touch_draw(r, 1600, 720);
+            SDL_RenderPresent(r);
+            snprintf(p, sizeof p, "%s/14_touch.bmp", test_dir); SDL_SaveBMP(sf, p);
+        }
         bool ok = script_password("BB11L");
         reset_times();
         script_warp(13);                     // keep the family, hearts, items
@@ -1418,8 +1700,12 @@ int main(int argc, char **argv)
         return 0;
     }
 
+#ifdef __ANDROID__
+    win = SDL_CreateWindow("Mansion", 0, 0, 0, 0, SDL_WINDOW_FULLSCREEN | SDL_WINDOW_ALLOW_HIGHDPI);
+#else
     win = SDL_CreateWindow("Mansion", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1024, 768,
                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+#endif
     if (!win) fatal(SDL_GetError());
     SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
     if (!ren) ren = SDL_CreateRenderer(win, -1, 0);
@@ -1438,8 +1724,11 @@ int main(int argc, char **argv)
 
     while (!quit) {
         SDL_Event e;
+        int ow, oh;
+        SDL_GetRendererOutputSize(ren, &ow, &oh);
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) quit = true;
+            else if (touch_event(&e, ow, oh)) continue;
             else if (e.type == SDL_KEYDOWN && !e.key.repeat && binding >= 0) bind_key(e.key.keysym.scancode);
             else if (e.type == SDL_CONTROLLERBUTTONDOWN && binding >= 0) bind_pad(e.cbutton.button);
             else if (e.type == SDL_KEYDOWN && !e.key.repeat) {
@@ -1473,6 +1762,23 @@ int main(int argc, char **argv)
         }
         // Select + Start together also pauses (for pads without a Back button)
         uint16_t held = read_pad();
+        bool any_pad = false;
+        for (int i = 0; i < 4; i++) any_pad |= pads[i] != NULL;
+        bool touch_on = touch_shown(any_pad);
+        {   // the screen's buttons: held in the game, pressed in the menus
+            uint16_t th = touch_held(), tp = th & ~touch_prev;
+            touch_prev = th;
+            if (pause_tap) { pause_tap = false; handle(M_PAUSE); }
+            if (state == ST_PLAY) held |= th;
+            else if (binding < 0) {
+                if (tp & 1 << RETRO_DEVICE_ID_JOYPAD_UP) handle(M_UP);
+                if (tp & 1 << RETRO_DEVICE_ID_JOYPAD_DOWN) handle(M_DOWN);
+                if (tp & 1 << RETRO_DEVICE_ID_JOYPAD_LEFT) handle(M_LEFT);
+                if (tp & 1 << RETRO_DEVICE_ID_JOYPAD_RIGHT) handle(M_RIGHT);
+                if (tp & (1 << RETRO_DEVICE_ID_JOYPAD_A | 1 << RETRO_DEVICE_ID_JOYPAD_START)) handle(M_OK);
+                if (tp & 1 << RETRO_DEVICE_ID_JOYPAD_B) handle(M_BACK);
+            }
+        }
         bool fast = SDL_GetKeyboardState(NULL)[SDL_SCANCODE_TAB] != 0;
         if (state == ST_PLAY && (held & (1 << RETRO_DEVICE_ID_JOYPAD_SELECT)) && (held & (1 << RETRO_DEVICE_ID_JOYPAD_START)))
             pause_game();
@@ -1504,6 +1810,11 @@ int main(int argc, char **argv)
         SDL_Rect src = { 0, 0, gw, gh };
         SDL_RenderCopy(ren, tg, &src, NULL);
         SDL_RenderCopy(ren, tu, NULL, NULL);
+        if (touch_on) {                          // in window pixels, over everything
+            SDL_RenderSetLogicalSize(ren, 0, 0);
+            touch_draw(ren, ow, oh);
+            SDL_RenderSetLogicalSize(ren, 1024, 768);
+        }
         SDL_RenderPresent(ren);
 
         // pacing: the sound queue when playing, the clock otherwise
