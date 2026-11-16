@@ -1,0 +1,17 @@
+# Never commit the game or anything taken from it
+*.sfc
+*.smc
+*.zip
+*.state
+map.bin
+mansion.cfg
+
+# Builds and test output
+mansion
+Mansion.exe
+*.dll
+*.so
+test-out/
+assets/
+out/
+__pycache__/

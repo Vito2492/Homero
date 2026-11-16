@@ -1,0 +1,45 @@
+MANSION - The Addams Family (SNES) con menús y trucos nuevos
+=============================================================
+
+Cómo abrirlo
+  Dejá en esta carpeta, junto a Mansion.exe:
+    - Addams Family, The (USA).sfc   (tu ROM; también podés arrastrarla sobre Mansion.exe)
+    - SDL2.dll y snes9x_libretro.dll (ya vienen)
+  La primera vez tarda un par de segundos: saca la fuente, el marco y la mano
+  del menú de tu propia ROM.
+
+Controles del juego (teclado)
+  Flechas     mover
+  Z           B (saltar)
+  X           A
+  A / S       Y / X
+  Q / W       L / R
+  Enter       Start
+  Shift der.  Select
+  Tab         avance rápido (mantener)
+
+Siempre disponibles
+  F1 o Esc    pausa / volver
+  F5 / F7     guardar / cargar estado rápido
+  F11         pantalla completa
+  Joystick: Select/Back pausa (o Select + Start juntos). A acepta y B vuelve en los menús.
+            LT o RT guardan estado, L3 o R3 (apretar los sticks) lo cargan.
+
+En los menús
+  Flechas para elegir, Enter (o Z / X) para aceptar, Backspace para volver.
+
+Trucos (pausa > TRUCOS) se aplican al instante, sin reiniciar:
+  MODO FACIL (cada golpe quita un cuarto de corazón; el corazón que se va gastando se oscurece
+  por cuartos en el HUD), MODO DIOS (no te hacen daño), VIDA INFINITA, VIDAS INFINITAS, SOMBRERO VOLADOR,
+  ESPADA, PELOTAS DE GOLF, SIN SLOWDOWN
+
+IR A NIVEL (inicio y pausa): las 15 zonas. Conserva corazones, objetos, vidas y familia rescatada.
+PROGRESO (pausa): tiempo total, familia a salvo, corazones y tiempo por zona.
+OPCIONES > TIMER EN PANTALLA muestra el tiempo arriba a la derecha.
+
+MAPA (pausa): se dibuja solo con lo que vas viendo de cada zona; el punto rojo es Gomez.
+  Izquierda / derecha cambian de zona. Se guarda en map.bin.
+BOSS RUSH: se desbloquea al terminar el juego. Mientras jugás, la primera vez que llegás a cada
+  jefe el programa guarda el comienzo de esa pelea (boss_XX.state). Ya desbloqueado, elegís las
+  reglas (corazones 2-5, vida infinita, vidas 1/3/5/9/infinitas, espada, pelotas de golf) y los
+  jefes se encadenan uno tras otro con tiempo total. Los trucos normales no cuentan en el boss rush.
