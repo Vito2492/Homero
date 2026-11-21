@@ -69,6 +69,8 @@ jobs:
 
   android:
     runs-on: ubuntu-24.04
+    outputs:
+      signed: ${{ steps.key.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -88,18 +90,36 @@ jobs:
           cp LICENSE android/app/src/main/assets/licenses/Mansion-LICENSE.txt
           cp snes9x/LICENSE android/app/src/main/assets/licenses/snes9x-LICENSE.txt
           cp SDL2-$SDL/LICENSE.txt android/app/src/main/assets/licenses/SDL2-LICENSE.txt
+      - name: Signing key
+        id: key
+        env:
+          KEYSTORE_B64: ${{ secrets.MANSION_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > $RUNNER_TEMP/mansion.keystore
+            echo "MANSION_KEYSTORE=$RUNNER_TEMP/mansion.keystore" >> $GITHUB_ENV
+            echo "signed=true" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::No MANSION_KEYSTORE_B64 secret: the APK is signed with a throwaway debug key"
+          fi
       - name: Build
+        env:
+          MANSION_KEYSTORE_PASSWORD: ${{ secrets.MANSION_KEYSTORE_PASSWORD }}
+          MANSION_KEY_ALIAS: ${{ secrets.MANSION_KEY_ALIAS }}
+          MANSION_KEY_PASSWORD: ${{ secrets.MANSION_KEY_PASSWORD }}
         run: |
           ndk=$(sed -n 's/^Pkg.Revision *= *//p' $ANDROID_NDK_HOME/source.properties)
           v=$(cat VERSION)
           cd android
           gradle --no-daemon assembleRelease -PndkVersion=$ndk -PversionCode=${{ github.run_number }} -PversionName=$v
           cp app/build/outputs/apk/release/app-release.apk ../Mansion-Android.apk
+          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)/apksigner verify --print-certs ../Mansion-Android.apk | grep -i "SHA-256"
       - uses: actions/upload-artifact@v4
         with: { name: Mansion-Android, path: Mansion-Android.apk }
 
   release:
-    if: github.ref == 'refs/heads/main'
+    # only with the fixed key, so every version installs over the last one
+    if: github.ref == 'refs/heads/main' && needs.android.outputs.signed == 'true'
     needs: [windows, linux, android]
     runs-on: ubuntu-24.04
     permissions: { contents: write }
@@ -117,7 +137,7 @@ jobs:
           body: |
             Windows: descomprimí Mansion-Windows.zip, poné tu ROM "Addams Family, The (USA).sfc" al lado de Mansion.exe y abrilo.
             Linux: descomprimí Mansion-Linux.tar.gz, poné la ROM al lado y corré ./mansion.
-            Android: instalá Mansion-Android.apk (hay que permitir apps de origen desconocido). La primera vez te pide elegir tu ROM.
+            Android: instalá Mansion-Android.apk (hay que permitir apps de origen desconocido). La primera vez te pide elegir tu ROM. Las versiones nuevas se instalan encima y conservan las partidas.
             No incluye el juego: usá tu propia copia (versión USA).
           files: |
             Mansion-Windows.zip

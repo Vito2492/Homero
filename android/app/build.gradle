@@ -20,10 +20,23 @@ android {
             }
         }
     }
+    // The release key comes from the environment (GitHub secrets). Without it
+    // the APK is signed with the debug key, which changes on every machine.
+    def ks = System.getenv('MANSION_KEYSTORE')
+    signingConfigs {
+        if (ks && file(ks).exists()) {
+            release {
+                storeFile file(ks)
+                storePassword System.getenv('MANSION_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('MANSION_KEY_ALIAS')
+                keyPassword System.getenv('MANSION_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug      // sideloaded APK
+            signingConfig (ks && file(ks).exists()) ? signingConfigs.release : signingConfigs.debug
         }
     }
     packagingOptions {

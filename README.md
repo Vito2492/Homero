@@ -40,9 +40,25 @@ En [Releases](../../releases) están las tres versiones. Ninguna incluye el jueg
 
 - **Windows**: descomprimí `Mansion-Windows.zip`, poné tu ROM **`Addams Family, The (USA).sfc`** al lado de `Mansion.exe` (o arrastrala sobre el programa) y abrilo.
 - **Linux**: descomprimí `Mansion-Linux.tar.gz`, poné la ROM al lado y corré `./mansion`.
-- **Android**: instalá `Mansion-Android.apk` (hay que permitir instalar apps de origen desconocido). La primera vez te pide elegir tu ROM (`.sfc`, `.smc` o un `.zip` que la tenga) y la copia dentro de la app.
+- **Android**: mirá [Instalar en el celular](#instalar-en-el-celular).
 
 La primera vez tarda un par de segundos mientras saca el arte de los menús de tu ROM.
+
+### Instalar en el celular
+
+No está en Play Store: se baja directo de acá y se instala.
+
+<img src="docs/qr-android.png" alt="QR para bajar Mansion para Android" width="180" align="right">
+
+1. **Bajá la app.** Escaneá el QR con la cámara del celular, o abrí este enlace en el celular (siempre da la última versión):
+   **https://github.com/Vito2492/Homero/releases/latest/download/Mansion-Android.apk**
+2. **Instalala.** Abrí el archivo descargado. Android va a avisar que es de "origen desconocido": tocá **Configuración**, activá **Permitir de esta fuente** para el navegador o el administrador de archivos que usaste, y volvé atrás para **Instalar**. Es una sola vez.
+   Si aparece **Play Protect** diciendo que no conoce la app, tocá **Más detalles → Instalar de todas formas**: pasa con cualquier app que no viene de Play Store.
+3. **Elegí tu ROM.** La primera vez que la abrís te pide el archivo del juego (`.sfc`, `.smc` o un `.zip` que lo tenga). Lo copia dentro de la app y no lo vuelve a pedir. La app no trae el juego: necesitás tu propia copia, versión USA.
+
+**Actualizar:** bajá e instalá la nueva encima de la anterior, con el mismo enlace o QR. Tus partidas guardadas, el mapa y la configuración se conservan.
+
+Funciona en Android 7 o más nuevo, en teléfonos y tablets.
 
 ### En el celular
 
@@ -111,7 +127,7 @@ Zonas: 00 Hall of Stairs, 01 Addams Residence, 02 The Old Tree, 03 The Conservat
 
 ## Estado
 
-Probado con pruebas automáticas y jugando. Falta comprobar con jefes reales la detección del boss rush y el desbloqueo al terminar el juego, y confirmar qué familiar es cada marca de progreso. Pendiente: pantalla ancha. El APK de Android va firmado con una clave de prueba (para instalar a mano, no para Play Store).
+Probado con pruebas automáticas y jugando. Falta comprobar con jefes reales la detección del boss rush y el desbloqueo al terminar el juego, y confirmar qué familiar es cada marca de progreso. Pendiente: pantalla ancha. El APK de Android va firmado siempre con la misma clave, así las versiones nuevas se instalan encima de las viejas.
 
 ## Créditos
 
