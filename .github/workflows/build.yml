@@ -113,6 +113,8 @@ jobs:
           cd android
           gradle --no-daemon assembleRelease -PndkVersion=$ndk -PversionCode=${{ github.run_number }} -PversionName=$v
           cp app/build/outputs/apk/release/app-release.apk ../Mansion-Android.apk
+          unzip -p ../Mansion-Android.apk 'classes*.dex' | grep -aq 'Lio/github/vito2492/mansion/MansionActivity;' \
+            || { echo "::error::MansionActivity is missing from the APK"; exit 1; }
           $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)/apksigner verify --print-certs ../Mansion-Android.apk | grep -i "SHA-256"
       - uses: actions/upload-artifact@v4
         with: { name: Mansion-Android, path: Mansion-Android.apk }

@@ -7,8 +7,8 @@ map.bin
 mansion.cfg
 
 # Builds and test output
-mansion
-Mansion.exe
+/mansion
+/Mansion.exe
 *.dll
 *.so
 test-out/
